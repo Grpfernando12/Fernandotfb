@@ -2,14 +2,12 @@ import React, { useState } from 'react';
 import { TrackingTab } from './components/TrackingTab';
 import { LinksNotesTab } from './components/LinksNotesTab';
 import { TextToolsTab } from './components/TextToolsTab';
-import { LayoutDashboard, Link2, Type, Menu, X, Cpu, LogOut } from 'lucide-react';
+import { LayoutDashboard, Link2, Type, Menu, X, Cpu } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { useAuth } from './components/AuthProvider';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'tracking' | 'links' | 'text'>('tracking');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const { logOut } = useAuth();
 
   const tabs = [
     { id: 'tracking', label: 'Acompanhamento', icon: LayoutDashboard },
@@ -38,9 +36,7 @@ export default function App() {
            <span className="font-semibold tracking-tight text-lg text-cyan-50 neon-text-cyan">FernandoTFB</span>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={logOut} className="p-2 text-red-400 hover:bg-red-950/50 rounded-lg transition-colors">
-            <LogOut size={20} />
-          </button>
+          <div data-netlify-identity-menu></div>
           <button 
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
             className="p-2 -mr-2 text-cyan-400 hover:bg-cyan-950/50 rounded-lg transition-colors"
@@ -98,13 +94,7 @@ export default function App() {
               <div className="w-2 h-2 rounded-full bg-cyan-500 animate-pulse shadow-[0_0_8px_rgba(6,182,212,0.8)]"></div>
               <p className="text-[11px] text-cyan-600/80 font-mono tracking-widest uppercase">System Online</p>
             </div>
-            <button 
-              onClick={logOut}
-              className="text-cyan-600/80 hover:text-red-400 transition-colors"
-              title="Sair do sistema"
-            >
-              <LogOut size={16} />
-            </button>
+            <div data-netlify-identity-menu></div>
           </div>
         </div>
       </aside>

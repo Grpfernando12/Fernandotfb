@@ -1,9 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
+import { useLocalStorage } from '../hooks/useLocalStorage';
 import { Plus, Trash2, ExternalLink, StickyNote, Anchor } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { db, handleFirestoreError, OperationType } from '../firebase';
-import { collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, query, orderBy } from 'firebase/firestore';
-import { useAuth } from './AuthProvider';
 
 interface QuickLink {
   id: string;
@@ -29,10 +27,8 @@ const COLOR_OPTIONS = [
 ];
 
 export function LinksNotesTab() {
-  const { user } = useAuth();
-  
-  const [links, setLinks] = useState<QuickLink[]>([]);
-  const [postIts, setPostIts] = useState<PostIt[]>([]);
+  const [links, setLinks] = useLocalStorage<QuickLink[]>('dashboard_links', []);
+  const [postIts, setPostIts] = useLocalStorage<PostIt[]>('dashboard_postits', []);
 
   // Form states for Links
   const [linkName, setLinkName] = useState('');
@@ -45,107 +41,62 @@ export function LinksNotesTab() {
   // Handle Link Activity
   const [clickingId, setClickingId] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!user) return;
-
-    // Links subscription
-    const linksQ = query(collection(db, `users/${user.uid}/links`), orderBy('createdAt', 'desc'));
-    const unsubLinks = onSnapshot(linksQ, (snapshot) => {
-      setLinks(snapshot.docs.map(d => ({ id: d.id, ...d.data() })) as QuickLink[]);
-    }, (error) => handleFirestoreError(error, OperationType.GET, `users/${user.uid}/links`));
-
-    // PostIts subscription
-    const postItQ = query(collection(db, `users/${user.uid}/postIts`), orderBy('createdAt', 'desc'));
-    const unsubPostIts = onSnapshot(postItQ, (snapshot) => {
-      setPostIts(snapshot.docs.map(d => ({ id: d.id, ...d.data() })) as PostIt[]);
-    }, (error) => handleFirestoreError(error, OperationType.GET, `users/${user.uid}/postIts`));
-
-    return () => {
-      unsubLinks();
-      unsubPostIts();
-    }
-  }, [user]);
-
   // Handle Link Add
-  const handleAddLink = async (e: React.FormEvent) => {
+  const handleAddLink = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !linkName.trim() || !linkUrl.trim()) return;
+    if (!linkName.trim() || !linkUrl.trim()) return;
 
     let processedUrl = linkUrl.trim();
     if (!/^https?:\/\//i.test(processedUrl)) {
       processedUrl = `https://${processedUrl}`;
     }
 
-    try {
-      const linkId = crypto.randomUUID();
-      await setDoc(doc(db, `users/${user.uid}/links`, linkId), {
-        userId: user.uid,
-        name: linkName.trim(),
-        url: processedUrl,
-        clicks: 0,
-        createdAt: Date.now()
-      });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, `users/${user.uid}/links`);
-    }
+    const newLink: QuickLink = {
+      id: crypto.randomUUID(),
+      name: linkName.trim(),
+      url: processedUrl,
+      clicks: 0,
+      createdAt: Date.now()
+    };
 
+    setLinks([...links, newLink]);
     setLinkName('');
     setLinkUrl('');
   };
 
-  const handleLinkClick = async (id: string, currentClicks: number) => {
-    if (!user) return;
-    setClickingId(id);
+  const handleLinkClick = (id: string, currentClicks: number) => {
+    setLinks(prevLinks => prevLinks.map(l => l.id === id ? { ...l, clicks: currentClicks + 1 } : l));
     
-    try {
-      await updateDoc(doc(db, `users/${user.uid}/links`, id), {
-        clicks: currentClicks + 1
-      });
-    } catch (error) {
-       handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}/links/${id}`);
-    }
+    setClickingId(id);
     
     setTimeout(() => {
       setClickingId(null);
     }, 150);
   };
 
-  const removeLink = async (id: string) => {
-    if (!user) return;
-    try {
-      await deleteDoc(doc(db, `users/${user.uid}/links`, id));
-    } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, `users/${user.uid}/links/${id}`);
-    }
+  const removeLink = (id: string) => {
+    setLinks(links.filter(l => l.id !== id));
   };
 
   // Handle Post-it Add
-  const handleAddNote = async (e: React.FormEvent) => {
+  const handleAddNote = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !noteText.trim()) return;
+    if (!noteText.trim()) return;
 
-    try {
-      const noteId = crypto.randomUUID();
-      await setDoc(doc(db, `users/${user.uid}/postIts`, noteId), {
-        userId: user.uid,
-        text: noteText.trim(),
-        color: selectedColor,
-        createdAt: Date.now()
-      });
-    } catch (error) {
-       handleFirestoreError(error, OperationType.WRITE, `users/${user.uid}/postIts`);
-    }
+    const newNote: PostIt = {
+      id: crypto.randomUUID(),
+      text: noteText.trim(),
+      color: selectedColor,
+      createdAt: Date.now()
+    };
+
+    setPostIts([newNote, ...postIts]);
 
     setNoteText('');
   };
 
-  const removeNote = async (id: string) => {
-    if (!user) return;
-     try {
-      await deleteDoc(doc(db, `users/${user.uid}/postIts`, id));
-    } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, `users/${user.uid}/postIts/${id}`);
-    }
+  const removeNote = (id: string) => {
+    setPostIts(postIts.filter(n => n.id !== id));
   };
 
   // Ordena os links sempre do maior para o menor (decrescente)

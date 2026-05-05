@@ -1,9 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
+import { useLocalStorage } from '../hooks/useLocalStorage';
 import { CheckCircle2, Circle, Plus, Trash2, Edit2, Save, X, Activity } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { db, handleFirestoreError, OperationType } from '../firebase';
-import { collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, query, orderBy } from 'firebase/firestore';
-import { useAuth } from './AuthProvider';
 
 interface Task {
   id: string;
@@ -15,56 +13,38 @@ interface Task {
 }
 
 export function TrackingTab() {
-  const { user } = useAuth();
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const [tasks, setTasks] = useLocalStorage<Task[]>('dashboard_tasks', []);
   const [cityCode, setCityCode] = useState('');
   const [contractNumber, setContractNumber] = useState('');
   const [salesperson, setSalesperson] = useState('');
   const [editTaskId, setEditTaskId] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!user) return;
-    const q = query(
-      collection(db, `users/${user.uid}/tasks`), 
-      orderBy('createdAt', 'desc')
-    );
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const fetchedTasks = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Task[];
-      setTasks(fetchedTasks);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.GET, `users/${user.uid}/tasks`);
-    });
-    return () => unsubscribe();
-  }, [user]);
-
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !cityCode.trim() || !contractNumber.trim() || !salesperson.trim()) return;
+    if (!cityCode.trim() || !contractNumber.trim() || !salesperson.trim()) return;
 
-    try {
-      if (editTaskId) {
-        await updateDoc(doc(db, `users/${user.uid}/tasks`, editTaskId), {
-          cityCode: cityCode.trim(),
-          contractNumber: contractNumber.trim(),
-          salesperson: salesperson.trim()
-        });
-        setEditTaskId(null);
-      } else {
-        const taskId = crypto.randomUUID();
-        await setDoc(doc(db, `users/${user.uid}/tasks`, taskId), {
-          userId: user.uid,
-          cityCode: cityCode.trim(),
-          contractNumber: contractNumber.trim(),
-          salesperson: salesperson.trim(),
-          status: 'pendente',
-          createdAt: Date.now()
-        });
-      }
-    } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, `users/${user.uid}/tasks`);
+    if (editTaskId) {
+      setTasks(tasks.map(t => 
+        t.id === editTaskId 
+          ? { 
+              ...t, 
+              cityCode: cityCode.trim(), 
+              contractNumber: contractNumber.trim(), 
+              salesperson: salesperson.trim() 
+            } 
+          : t
+      ));
+      setEditTaskId(null);
+    } else {
+      const newTask: Task = {
+        id: crypto.randomUUID(),
+        cityCode: cityCode.trim(),
+        contractNumber: contractNumber.trim(),
+        salesperson: salesperson.trim(),
+        status: 'pendente',
+        createdAt: Date.now()
+      };
+      setTasks([newTask, ...tasks]);
     }
 
     setCityCode('');
@@ -87,24 +67,16 @@ export function TrackingTab() {
     setSalesperson('');
   };
 
-  const toggleStatus = async (id: string, currentStatus: string) => {
-    if (!user) return;
-    try {
-      await updateDoc(doc(db, `users/${user.uid}/tasks`, id), {
-        status: currentStatus === 'pendente' ? 'concluido' : 'pendente'
-      });
-    } catch (error) {
-       handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}/tasks/${id}`);
-    }
+  const toggleStatus = (id: string, currentStatus: string) => {
+    setTasks(tasks.map(task => 
+      task.id === id 
+        ? { ...task, status: currentStatus === 'pendente' ? 'concluido' : 'pendente' } 
+        : task
+    ));
   };
 
-  const removeTask = async (id: string) => {
-    if (!user) return;
-    try {
-      await deleteDoc(doc(db, `users/${user.uid}/tasks`, id));
-    } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, `users/${user.uid}/tasks/${id}`);
-    }
+  const removeTask = (id: string) => {
+    setTasks(tasks.filter(task => task.id !== id));
   };
 
   return (
