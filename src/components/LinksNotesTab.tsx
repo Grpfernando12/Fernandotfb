@@ -38,6 +38,10 @@ export function LinksNotesTab() {
   const [noteText, setNoteText] = useState('');
   const [selectedColor, setSelectedColor] = useState(COLOR_OPTIONS[0].full);
 
+  // Drag and Drop states for Post-it
+  const [draggedNoteIndex, setDraggedNoteIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
   // Handle Link Activity
   const [clickingId, setClickingId] = useState<string | null>(null);
 
@@ -97,6 +101,36 @@ export function LinksNotesTab() {
 
   const removeNote = (id: string) => {
     setPostIts(postIts.filter(n => n.id !== id));
+  };
+
+  const handleDragStart = (index: number) => {
+    setDraggedNoteIndex(index);
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    setDragOverIndex(index);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOverIndex(null);
+  };
+
+  const handleDrop = (e: React.DragEvent, targetIndex: number) => {
+    e.preventDefault();
+    if (draggedNoteIndex === null || draggedNoteIndex === targetIndex) {
+      setDragOverIndex(null);
+      return;
+    }
+
+    const newPostIts = [...postIts];
+    const item = newPostIts.splice(draggedNoteIndex, 1)[0];
+    newPostIts.splice(targetIndex, 0, item);
+    
+    setPostIts(newPostIts);
+    setDraggedNoteIndex(null);
+    setDragOverIndex(null);
   };
 
   // Ordena os links sempre do maior para o menor (decrescente)
@@ -262,7 +296,7 @@ export function LinksNotesTab() {
 
           {/* Grid de Post-its */}
           <AnimatePresence mode="popLayout">
-          {postIts.map(note => (
+          {postIts.map((note, index) => (
             <motion.div 
               layout
               initial={{ scale: 0.8, opacity: 0 }}
@@ -270,7 +304,12 @@ export function LinksNotesTab() {
               exit={{ scale: 0.8, opacity: 0 }}
               transition={{ type: "spring", stiffness: 300, damping: 25 }}
               key={note.id} 
-              className={`${note.color} p-5 rounded-xl border aspect-square flex flex-col relative group transform hover:-translate-y-1 transition-all backdrop-blur-md font-mono before:content-[''] before:absolute before:top-0 before:left-0 before:w-full before:h-[2px] before:bg-white/20 before:rounded-t-xl`}
+              draggable
+              onDragStart={() => handleDragStart(index)}
+              onDragOver={(e) => handleDragOver(e, index)}
+              onDragLeave={handleDragLeave}
+              onDrop={(e) => handleDrop(e, index)}
+              className={`${note.color} p-5 rounded-xl border aspect-square flex flex-col relative group transform hover:-translate-y-1 transition-all backdrop-blur-md font-mono before:content-[''] before:absolute before:top-0 before:left-0 before:w-full before:h-[2px] before:bg-white/20 before:rounded-t-xl cursor-grab active:cursor-grabbing ${dragOverIndex === index ? 'opacity-50 ring-2 ring-white scale-95' : ''}`}
             >
               <button 
                 onClick={() => removeNote(note.id)}
