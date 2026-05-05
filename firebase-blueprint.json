@@ -1,0 +1,57 @@
+{
+  "entities": {
+    "Task": {
+      "title": "Task",
+      "description": "A task or sale tracking entry",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "clientName": { "type": "string" },
+        "vendorCode": { "type": "string" },
+        "trackingNumber": { "type": "string" },
+        "status": { "type": "string", "enum": ["pendente", "concluido"] },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["userId", "clientName", "vendorCode", "trackingNumber", "status", "createdAt"]
+    },
+    "QuickLink": {
+      "title": "QuickLink",
+      "description": "A frequently accessed link",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "url": { "type": "string" },
+        "clicks": { "type": "number" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["userId", "name", "url", "clicks", "createdAt"]
+    },
+    "PostIt": {
+      "title": "PostIt",
+      "description": "A quick note",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "text": { "type": "string" },
+        "color": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["userId", "text", "color", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/tasks/{taskId}": {
+      "schema": { "$ref": "#/entities/Task" },
+      "description": "User's tasks"
+    },
+    "/users/{userId}/links/{linkId}": {
+      "schema": { "$ref": "#/entities/QuickLink" },
+      "description": "User's quick links"
+    },
+    "/users/{userId}/postIts/{postItId}": {
+      "schema": { "$ref": "#/entities/PostIt" },
+      "description": "User's post it notes"
+    }
+  }
+}

@@ -39,7 +39,7 @@ export function TextToolsTab() {
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500 max-w-5xl mx-auto">
+    <div className="space-y-6 max-w-5xl mx-auto">
       <div className="mb-8 text-center sm:text-left flex flex-col sm:flex-row sm:items-center gap-3">
         <ScanText className="text-cyan-400 hidden sm:block" size={28} />
         <div>

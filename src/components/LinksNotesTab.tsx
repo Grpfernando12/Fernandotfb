@@ -1,12 +1,16 @@
-import React, { useState } from 'react';
-import { useLocalStorage } from '../hooks/useLocalStorage';
+import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, ExternalLink, StickyNote, Anchor } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { db, handleFirestoreError, OperationType } from '../firebase';
+import { collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, query, orderBy } from 'firebase/firestore';
+import { useAuth } from './AuthProvider';
 
 interface QuickLink {
   id: string;
   name: string;
   url: string;
   clicks: number;
+  createdAt: number;
 }
 
 interface PostIt {
@@ -25,8 +29,10 @@ const COLOR_OPTIONS = [
 ];
 
 export function LinksNotesTab() {
-  const [links, setLinks] = useLocalStorage<QuickLink[]>('dashboard_links', []);
-  const [postIts, setPostIts] = useLocalStorage<PostIt[]>('dashboard_postits', []);
+  const { user } = useAuth();
+  
+  const [links, setLinks] = useState<QuickLink[]>([]);
+  const [postIts, setPostIts] = useState<PostIt[]>([]);
 
   // Form states for Links
   const [linkName, setLinkName] = useState('');
@@ -39,80 +45,127 @@ export function LinksNotesTab() {
   // Handle Link Activity
   const [clickingId, setClickingId] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (!user) return;
+
+    // Links subscription
+    const linksQ = query(collection(db, `users/${user.uid}/links`), orderBy('createdAt', 'desc'));
+    const unsubLinks = onSnapshot(linksQ, (snapshot) => {
+      setLinks(snapshot.docs.map(d => ({ id: d.id, ...d.data() })) as QuickLink[]);
+    }, (error) => handleFirestoreError(error, OperationType.GET, `users/${user.uid}/links`));
+
+    // PostIts subscription
+    const postItQ = query(collection(db, `users/${user.uid}/postIts`), orderBy('createdAt', 'desc'));
+    const unsubPostIts = onSnapshot(postItQ, (snapshot) => {
+      setPostIts(snapshot.docs.map(d => ({ id: d.id, ...d.data() })) as PostIt[]);
+    }, (error) => handleFirestoreError(error, OperationType.GET, `users/${user.uid}/postIts`));
+
+    return () => {
+      unsubLinks();
+      unsubPostIts();
+    }
+  }, [user]);
+
   // Handle Link Add
-  const handleAddLink = (e: React.FormEvent) => {
+  const handleAddLink = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!linkName.trim() || !linkUrl.trim()) return;
+    if (!user || !linkName.trim() || !linkUrl.trim()) return;
 
     let processedUrl = linkUrl.trim();
     if (!/^https?:\/\//i.test(processedUrl)) {
       processedUrl = `https://${processedUrl}`;
     }
 
-    const newLink: QuickLink = {
-      id: crypto.randomUUID(),
-      name: linkName.trim(),
-      url: processedUrl,
-      clicks: 0
-    };
+    try {
+      const linkId = crypto.randomUUID();
+      await setDoc(doc(db, `users/${user.uid}/links`, linkId), {
+        userId: user.uid,
+        name: linkName.trim(),
+        url: processedUrl,
+        clicks: 0,
+        createdAt: Date.now()
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `users/${user.uid}/links`);
+    }
 
-    setLinks([...links, newLink]);
     setLinkName('');
     setLinkUrl('');
   };
 
-  const handleLinkClick = (id: string, url: string) => {
-    // Aumenta contador de cliques imediatamente para não bloquear o popup
-    setLinks(prevLinks => prevLinks.map(l => l.id === id ? { ...l, clicks: l.clicks + 1 } : l));
-    
-    // Feedback visual sutil
+  const handleLinkClick = async (id: string, currentClicks: number) => {
+    if (!user) return;
     setClickingId(id);
+    
+    try {
+      await updateDoc(doc(db, `users/${user.uid}/links`, id), {
+        clicks: currentClicks + 1
+      });
+    } catch (error) {
+       handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}/links/${id}`);
+    }
+    
     setTimeout(() => {
       setClickingId(null);
     }, 150);
-
-    // Abre o link sincronamente
-    window.open(url, '_blank', 'noopener,noreferrer');
   };
 
-  const removeLink = (id: string) => {
-    setLinks(links.filter(l => l.id !== id));
+  const removeLink = async (id: string) => {
+    if (!user) return;
+    try {
+      await deleteDoc(doc(db, `users/${user.uid}/links`, id));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `users/${user.uid}/links/${id}`);
+    }
   };
 
   // Handle Post-it Add
-  const handleAddNote = (e: React.FormEvent) => {
+  const handleAddNote = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!noteText.trim()) return;
+    if (!user || !noteText.trim()) return;
 
-    const newNote: PostIt = {
-      id: crypto.randomUUID(),
-      text: noteText.trim(),
-      color: selectedColor,
-      createdAt: Date.now()
-    };
+    try {
+      const noteId = crypto.randomUUID();
+      await setDoc(doc(db, `users/${user.uid}/postIts`, noteId), {
+        userId: user.uid,
+        text: noteText.trim(),
+        color: selectedColor,
+        createdAt: Date.now()
+      });
+    } catch (error) {
+       handleFirestoreError(error, OperationType.WRITE, `users/${user.uid}/postIts`);
+    }
 
-    setPostIts([newNote, ...postIts]);
     setNoteText('');
   };
 
-  const removeNote = (id: string) => {
-    setPostIts(postIts.filter(n => n.id !== id));
+  const removeNote = async (id: string) => {
+    if (!user) return;
+     try {
+      await deleteDoc(doc(db, `users/${user.uid}/postIts`, id));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `users/${user.uid}/postIts/${id}`);
+    }
   };
 
   // Ordena os links sempre do maior para o menor (decrescente)
   const sortedLinks = [...links].sort((a, b) => b.clicks - a.clicks);
 
   return (
-    <div className="space-y-12 animate-in fade-in duration-500">
+    <div className="space-y-12">
       {/* SEÇÃO DE LINKS */}
       <section>
-        <div className="mb-6 flex items-center gap-2">
+        <motion.div 
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          className="mb-6 flex items-center gap-2"
+        >
           <Anchor className="text-cyan-400" size={24} />
           <div>
             <h2 className="text-2xl font-semibold tracking-tight text-cyan-50">Rotas Rápidas</h2>
             <p className="text-sm text-cyan-500/70 mt-1 font-mono uppercase tracking-wider">Acessos frequentes priorizados pelo sistema_</p>
           </div>
-        </div>
+        </motion.div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Adicionar Link */}
@@ -159,11 +212,22 @@ export function LinksNotesTab() {
                 <div className="p-8 text-center text-cyan-700 font-mono tracking-widest text-sm">NO_LINKS_FOUND</div>
               ) : (
                 <ul className="divide-y divide-cyan-900/30 flex-1 overflow-y-auto custom-scrollbar">
+                  <AnimatePresence mode="popLayout">
                   {sortedLinks.map(link => (
-                    <li key={link.id} className="flex items-center justify-between p-4 hover:bg-cyan-950/20 transition-all group">
-                      <button
-                        onClick={() => handleLinkClick(link.id, link.url)}
-                        disabled={clickingId === link.id}
+                    <motion.li 
+                      layout
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.95 }}
+                      transition={{ duration: 0.2 }}
+                      key={link.id} 
+                      className="flex items-center justify-between p-4 hover:bg-cyan-950/20 transition-all group"
+                    >
+                      <a
+                        href={link.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={() => handleLinkClick(link.id, link.clicks)}
                         className={`flex-1 flex items-center gap-3 text-left focus:outline-none transition-all duration-150 ${
                           clickingId === link.id ? 'scale-[0.97] opacity-80' : 'hover:scale-[1.01]'
                         }`}
@@ -175,7 +239,7 @@ export function LinksNotesTab() {
                           <p className="font-bold tracking-wide text-cyan-100 group-hover:text-cyan-300 transition-colors">{link.name}</p>
                           <p className="text-[11px] font-mono text-cyan-600/70 truncate max-w-[200px] sm:max-w-sm">{link.url}</p>
                         </div>
-                      </button>
+                      </a>
                       
                       <div className="flex items-center gap-4">
                         <span className="inline-flex items-center justify-center min-w-[32px] h-8 px-2 rounded-sm bg-cyan-950/40 border border-cyan-900 border-l-cyan-500 text-xs font-mono font-bold text-cyan-400" title="Número de cliques">
@@ -183,13 +247,14 @@ export function LinksNotesTab() {
                         </span>
                         <button
                           onClick={() => removeLink(link.id)}
-                          className="p-1.5 text-gray-500 hover:text-red-400 border border-transparent hover:border-red-900/50 hover:bg-red-950/20 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
+                          className="p-1.5 text-gray-500 hover:text-red-400 border border-transparent hover:border-red-900/50 hover:bg-red-950/20 rounded-lg opacity-0 group-hover:opacity-100 transition-all z-10 relative"
                         >
                           <Trash2 size={18} />
                         </button>
                       </div>
-                    </li>
+                    </motion.li>
                   ))}
+                  </AnimatePresence>
                 </ul>
               )}
             </div>
@@ -199,13 +264,18 @@ export function LinksNotesTab() {
 
       {/* SEÇÃO POST-ITS */}
       <section>
-         <div className="mb-6 flex items-center gap-2">
+         <motion.div 
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: 0.1 }}
+          className="mb-6 flex items-center gap-2"
+        >
           <StickyNote className="text-purple-400" size={24} />
           <div>
             <h2 className="text-2xl font-semibold tracking-tight text-purple-50">Blocos de Memória</h2>
             <p className="text-sm text-purple-500/70 mt-1 font-mono uppercase tracking-wider">Anotações holográficas locais_</p>
           </div>
-        </div>
+        </motion.div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 items-start">
           
@@ -240,28 +310,36 @@ export function LinksNotesTab() {
           </div>
 
           {/* Grid de Post-its */}
+          <AnimatePresence mode="popLayout">
           {postIts.map(note => (
-            <div 
+            <motion.div 
+              layout
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.8, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 300, damping: 25 }}
               key={note.id} 
               className={`${note.color} p-5 rounded-xl border aspect-square flex flex-col relative group transform hover:-translate-y-1 transition-all backdrop-blur-md font-mono before:content-[''] before:absolute before:top-0 before:left-0 before:w-full before:h-[2px] before:bg-white/20 before:rounded-t-xl`}
             >
               <button 
                 onClick={() => removeNote(note.id)}
-                className="absolute top-3 right-3 text-white/50 hover:text-red-400 hover:bg-red-900/30 p-1 rounded transition-all opacity-0 group-hover:opacity-100"
+                className="absolute top-3 right-3 text-white/50 hover:text-red-400 hover:bg-red-900/30 p-1 rounded transition-all opacity-0 group-hover:opacity-100 z-10"
               >
                 <Trash2 size={14} />
               </button>
-              <p className="text-sm whitespace-pre-wrap flex-1 mt-1 leading-relaxed overflow-y-auto custom-scrollbar pr-1">
+              <p className="text-sm whitespace-pre-wrap flex-1 mt-1 leading-relaxed overflow-y-auto custom-scrollbar pr-1 relative z-0">
                 {note.text}
               </p>
-              <div className="flex justify-between items-center mt-3 pt-3 border-t border-white/10">
+              <div className="flex justify-between items-center mt-3 pt-3 border-t border-white/10 relative z-0">
                 <p className="text-[10px] text-white/50 tracking-wider">
                   {new Date(note.createdAt).toLocaleDateString()}
                 </p>
                 <div className="w-1.5 h-1.5 rounded-full bg-white/60 animate-pulse"></div>
               </div>
-            </div>
+            </motion.div>
           ))}
+          </AnimatePresence>
+
 
         </div>
       </section>

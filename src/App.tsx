@@ -1,17 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { TrackingTab } from './components/TrackingTab';
 import { LinksNotesTab } from './components/LinksNotesTab';
 import { TextToolsTab } from './components/TextToolsTab';
-import { LayoutDashboard, Link2, Type, Menu, X, Cpu } from 'lucide-react';
+import { LayoutDashboard, Link2, Type, Menu, X, Cpu, LogOut } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { useAuth } from './components/AuthProvider';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'tracking' | 'links' | 'text'>('tracking');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const { logOut } = useAuth();
 
   const tabs = [
     { id: 'tracking', label: 'Acompanhamento', icon: LayoutDashboard },
-    { id: 'links', label: 'Links e Post-its', icon: Link2 },
-    { id: 'text', label: 'Ferramentas de Texto', icon: Type },
+    { id: 'links', label: 'Rotas e Blocos', icon: Link2 },
+    { id: 'text', label: 'Processamento', icon: Type },
   ] as const;
 
   const navigateTo = (tabId: typeof activeTab) => {
@@ -34,15 +37,20 @@ export default function App() {
            </div>
            <span className="font-semibold tracking-tight text-lg text-cyan-50 neon-text-cyan">FernandoTFB</span>
         </div>
-        <button 
-          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-          className="p-2 -mr-2 text-cyan-400 hover:bg-cyan-950/50 rounded-lg transition-colors"
-        >
-          {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={logOut} className="p-2 text-red-400 hover:bg-red-950/50 rounded-lg transition-colors">
+            <LogOut size={20} />
+          </button>
+          <button 
+            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            className="p-2 -mr-2 text-cyan-400 hover:bg-cyan-950/50 rounded-lg transition-colors"
+          >
+            {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+          </button>
+        </div>
       </div>
 
-      {/* Sidebar Navigation (Desktop & Mobile Dropdown) */}
+      {/* Sidebar Navigation */}
       <aside className={`
         ${isMobileMenuOpen ? 'flex' : 'hidden'} md:flex
         flex-col fixed md:sticky top-[61px] md:top-0 left-0 w-full md:w-72 h-[calc(100vh-61px)] md:h-screen 
@@ -74,10 +82,10 @@ export default function App() {
                 }`}
               >
                 {isActive && (
-                  <div className="absolute left-0 top-0 bottom-0 w-1 bg-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.8)]"></div>
+                  <motion.div layoutId="activeTabIndicator" className="absolute left-0 top-0 bottom-0 w-1 bg-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.8)]" />
                 )}
-                <Icon size={18} className={`${isActive ? 'text-cyan-400' : 'text-gray-500 group-hover:text-cyan-300'} transition-colors`} />
-                <span className="tracking-wide">{tab.label}</span>
+                <Icon size={18} className={`${isActive ? 'text-cyan-400' : 'text-gray-500 group-hover:text-cyan-300'} transition-colors relative z-10`} />
+                <span className="tracking-wide relative z-10">{tab.label}</span>
               </button>
             )
           })}
@@ -85,18 +93,38 @@ export default function App() {
         
         {/* Footer Sidebar */}
         <div className="p-6 border-t border-cyan-900/30 hidden md:block">
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-cyan-500 animate-pulse shadow-[0_0_8px_rgba(6,182,212,0.8)]"></div>
-            <p className="text-[11px] text-cyan-600/80 font-mono tracking-widest uppercase">System Online</p>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-cyan-500 animate-pulse shadow-[0_0_8px_rgba(6,182,212,0.8)]"></div>
+              <p className="text-[11px] text-cyan-600/80 font-mono tracking-widest uppercase">System Online</p>
+            </div>
+            <button 
+              onClick={logOut}
+              className="text-cyan-600/80 hover:text-red-400 transition-colors"
+              title="Sair do sistema"
+            >
+              <LogOut size={16} />
+            </button>
           </div>
         </div>
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 p-4 sm:p-6 lg:p-8 xl:p-10 mx-auto w-full max-w-7xl relative z-10">
-        {activeTab === 'tracking' && <TrackingTab />}
-        {activeTab === 'links' && <LinksNotesTab />}
-        {activeTab === 'text' && <TextToolsTab />}
+      <main className="flex-1 p-4 sm:p-6 lg:p-8 xl:p-10 mx-auto w-full max-w-7xl relative z-10 overflow-hidden">
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={activeTab}
+            initial={{ opacity: 0, y: 10, filter: 'blur(4px)' }}
+            animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+            exit={{ opacity: 0, y: -10, filter: 'blur(4px)' }}
+            transition={{ duration: 0.3 }}
+            className="h-full"
+          >
+            {activeTab === 'tracking' && <TrackingTab />}
+            {activeTab === 'links' && <LinksNotesTab />}
+            {activeTab === 'text' && <TextToolsTab />}
+          </motion.div>
+        </AnimatePresence>
       </main>
       
     </div>

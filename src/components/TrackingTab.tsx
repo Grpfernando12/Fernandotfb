@@ -1,6 +1,9 @@
-import React, { useState } from 'react';
-import { useLocalStorage } from '../hooks/useLocalStorage';
-import { Check, CheckCircle2, Circle, Plus, Trash2, Edit2, Save, X, Activity } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { CheckCircle2, Circle, Plus, Trash2, Edit2, Save, X, Activity } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { db, handleFirestoreError, OperationType } from '../firebase';
+import { collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, query, orderBy } from 'firebase/firestore';
+import { useAuth } from './AuthProvider';
 
 interface Task {
   id: string;
@@ -12,38 +15,56 @@ interface Task {
 }
 
 export function TrackingTab() {
-  const [tasks, setTasks] = useLocalStorage<Task[]>('dashboard_tasks', []);
+  const { user } = useAuth();
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [cityCode, setCityCode] = useState('');
   const [contractNumber, setContractNumber] = useState('');
   const [salesperson, setSalesperson] = useState('');
   const [editTaskId, setEditTaskId] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!cityCode.trim() || !contractNumber.trim() || !salesperson.trim()) return;
+  useEffect(() => {
+    if (!user) return;
+    const q = query(
+      collection(db, `users/${user.uid}/tasks`), 
+      orderBy('createdAt', 'desc')
+    );
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const fetchedTasks = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Task[];
+      setTasks(fetchedTasks);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, `users/${user.uid}/tasks`);
+    });
+    return () => unsubscribe();
+  }, [user]);
 
-    if (editTaskId) {
-      setTasks(tasks.map(t => 
-        t.id === editTaskId 
-          ? { 
-              ...t, 
-              cityCode: cityCode.trim(), 
-              contractNumber: contractNumber.trim(), 
-              salesperson: salesperson.trim() 
-            } 
-          : t
-      ));
-      setEditTaskId(null);
-    } else {
-      const newTask: Task = {
-        id: crypto.randomUUID(),
-        cityCode: cityCode.trim(),
-        contractNumber: contractNumber.trim(),
-        salesperson: salesperson.trim(),
-        status: 'pendente',
-        createdAt: Date.now(),
-      };
-      setTasks([newTask, ...tasks]);
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !cityCode.trim() || !contractNumber.trim() || !salesperson.trim()) return;
+
+    try {
+      if (editTaskId) {
+        await updateDoc(doc(db, `users/${user.uid}/tasks`, editTaskId), {
+          cityCode: cityCode.trim(),
+          contractNumber: contractNumber.trim(),
+          salesperson: salesperson.trim()
+        });
+        setEditTaskId(null);
+      } else {
+        const taskId = crypto.randomUUID();
+        await setDoc(doc(db, `users/${user.uid}/tasks`, taskId), {
+          userId: user.uid,
+          cityCode: cityCode.trim(),
+          contractNumber: contractNumber.trim(),
+          salesperson: salesperson.trim(),
+          status: 'pendente',
+          createdAt: Date.now()
+        });
+      }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `users/${user.uid}/tasks`);
     }
 
     setCityCode('');
@@ -66,31 +87,54 @@ export function TrackingTab() {
     setSalesperson('');
   };
 
-  const toggleStatus = (id: string) => {
-    setTasks(tasks.map(task => 
-      task.id === id 
-        ? { ...task, status: task.status === 'pendente' ? 'concluido' : 'pendente' } 
-        : task
-    ));
+  const toggleStatus = async (id: string, currentStatus: string) => {
+    if (!user) return;
+    try {
+      await updateDoc(doc(db, `users/${user.uid}/tasks`, id), {
+        status: currentStatus === 'pendente' ? 'concluido' : 'pendente'
+      });
+    } catch (error) {
+       handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}/tasks/${id}`);
+    }
   };
 
-  const removeTask = (id: string) => {
-    setTasks(tasks.filter(task => task.id !== id));
+  const removeTask = async (id: string) => {
+    if (!user) return;
+    try {
+      await deleteDoc(doc(db, `users/${user.uid}/tasks`, id));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `users/${user.uid}/tasks/${id}`);
+    }
   };
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
+    <div className="space-y-8">
       {/* Header */}
       <div>
-        <h2 className="text-2xl font-semibold tracking-tight text-cyan-50 flex items-center gap-2">
+        <motion.h2 
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          className="text-2xl font-semibold tracking-tight text-cyan-50 flex items-center gap-2"
+        >
           <Activity className="text-cyan-400" />
           Acompanhamento {editTaskId && <span className="text-xs ml-2 px-2 py-1 bg-cyan-900/50 text-cyan-300 rounded-md uppercase tracking-widest border border-cyan-500/30">Modo Edição</span>}
-        </h2>
-        <p className="text-sm text-cyan-500/70 mt-1 font-mono uppercase tracking-wider">Gerencie status de contratos e vendas_</p>
+        </motion.h2>
+        <motion.p 
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.1 }}
+          className="text-sm text-cyan-500/70 mt-1 font-mono uppercase tracking-wider"
+        >
+          Gerencie status de contratos e vendas_
+        </motion.p>
       </div>
 
       {/* Form */}
-      <div className="glass-panel p-6 rounded-2xl relative overflow-hidden group">
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="glass-panel p-6 rounded-2xl relative overflow-hidden group"
+      >
         <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-cyan-500/50 to-transparent"></div>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4 md:flex-row md:items-end relative z-10">
           <div className="flex-1 space-y-1">
@@ -157,18 +201,28 @@ export function TrackingTab() {
             </button>
           )}
         </form>
-      </div>
+      </motion.div>
 
       {/* Task List */}
       <div className="space-y-4">
         {tasks.length === 0 ? (
-          <div className="text-center py-12 glass-panel rounded-2xl border-dashed border-cyan-900/50">
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="text-center py-12 glass-panel rounded-2xl border-dashed border-cyan-900/50"
+          >
             <p className="text-cyan-700 font-mono tracking-widest text-sm">NO_DATA_FOUND</p>
-          </div>
+          </motion.div>
         ) : (
-          <div className="grid gap-3">
+          <motion.div layout className="grid gap-3">
+            <AnimatePresence mode="popLayout">
             {tasks.map(task => (
-              <div 
+              <motion.div 
+                layout
+                initial={{ opacity: 0, scale: 0.95, filter: 'blur(4px)' }}
+                animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
+                exit={{ opacity: 0, scale: 0.95, filter: 'blur(4px)' }}
+                transition={{ duration: 0.2 }}
                 key={task.id} 
                 className={`group flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 rounded-xl border transition-all duration-300 relative overflow-hidden ${
                   task.status === 'concluido' 
@@ -177,7 +231,7 @@ export function TrackingTab() {
                 }`}
               >
                 {task.status === 'concluido' && (
-                  <div className="absolute left-0 top-0 bottom-0 w-1 bg-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.8)]"></div>
+                  <motion.div layoutId={`status-indicator-${task.id}`} className="absolute left-0 top-0 bottom-0 w-1 bg-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.8)]"></motion.div>
                 )}
                 
                 <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-6 w-full mb-4 sm:mb-0 relative z-10 pl-2">
@@ -216,7 +270,7 @@ export function TrackingTab() {
                 {/* Actions */}
                 <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end relative z-10">
                   <button
-                    onClick={() => toggleStatus(task.id)}
+                    onClick={() => toggleStatus(task.id, task.status)}
                     className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all border ${
                       task.status === 'concluido'
                         ? 'text-cyan-400 border-cyan-500/30 bg-cyan-950/30 hover:bg-cyan-950/60'
@@ -252,9 +306,10 @@ export function TrackingTab() {
                     <Trash2 size={16} />
                   </button>
                 </div>
-              </div>
+              </motion.div>
             ))}
-          </div>
+            </AnimatePresence>
+          </motion.div>
         )}
       </div>
     </div>
